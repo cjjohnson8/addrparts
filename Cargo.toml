@@ -1,0 +1,10 @@
+[package]
+name = "addrparts"
+version = "0.1.0"
+edition = "2021"
+description = "Parse and validate a single-line US mailing address"
+license = "MIT"
+
+[[bin]]
+name = "addrparts"
+path = "src/main.rs"
