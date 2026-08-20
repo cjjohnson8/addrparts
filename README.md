@@ -53,6 +53,26 @@ addrparts --json "1 First Ave, Nowhere, ZZ 00000"
 {"input":"1 First Ave, Nowhere, ZZ 00000","valid":false,"address":{"street":"1 First Ave","city":"Nowhere","state":"ZZ","zip5":"00000","zip4":null},"errors":["'ZZ' is not a recognized state or territory code"]}
 ```
 
+### Strict mode
+
+`--strict` additionally requires the street to end in a standard USPS
+suffix abbreviation (`St`, `Ave`, `Blvd`, `Pkwy`, ...) rather than a
+spelled-out word. This catches "123 Main Street" as invalid, since USPS
+Publication 28 wants "123 Main St".
+
+```
+addrparts --strict "123 Main Street, Springfield, IL 62704"
+```
+
+```
+error:  'Street' is not a standard USPS street suffix abbreviation
+valid:  false
+```
+
+A trailing period on the abbreviation (`St.`) is accepted. Extra folded
+segments (apartment, suite) are not checked - only the first comma segment,
+which is assumed to be the actual street line.
+
 ### Exit codes
 
 - `0` - parsed and valid

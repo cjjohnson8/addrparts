@@ -9,11 +9,13 @@ fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
 
     let mut json = false;
+    let mut strict = false;
     let mut input_parts: Vec<String> = Vec::new();
 
     for arg in &args {
         match arg.as_str() {
             "--json" => json = true,
+            "--strict" => strict = true,
             "-h" | "--help" => {
                 print_usage();
                 return ExitCode::from(2);
@@ -39,7 +41,7 @@ fn main() -> ExitCode {
         input_parts.join(" ")
     };
 
-    let outcome = address::parse(&input);
+    let outcome = address::parse(&input, strict);
 
     if json {
         println!("{}", to_json(&outcome));
@@ -58,10 +60,12 @@ fn print_usage() {
     eprintln!("addrparts - parse and validate a single-line US mailing address");
     eprintln!();
     eprintln!("USAGE:");
-    eprintln!("    addrparts [--json] \"123 Main St, Springfield, IL 62704\"");
-    eprintln!("    echo \"123 Main St, Springfield, IL 62704\" | addrparts [--json]");
+    eprintln!("    addrparts [--json] [--strict] \"123 Main St, Springfield, IL 62704\"");
+    eprintln!("    echo \"123 Main St, Springfield, IL 62704\" | addrparts [--json] [--strict]");
     eprintln!();
     eprintln!("Expected form: STREET, CITY, STATE ZIP[-ZIP4]");
+    eprintln!("--strict requires the street to end in a standard USPS suffix");
+    eprintln!("abbreviation (St, Ave, Blvd, ...) instead of a spelled-out word");
     eprintln!("Exit codes: 0 valid, 1 invalid, 2 usage error");
 }
 

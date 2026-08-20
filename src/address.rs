@@ -7,6 +7,29 @@ const STATE_CODES: &[&str] = &[
     "VA", "WA", "WV", "WI", "WY", "DC", "PR", "GU", "VI", "AS", "MP",
 ];
 
+// Standard USPS street suffix abbreviations (Publication 28, Appendix C1),
+// one preferred abbreviation per suffix type. Only used in --strict mode,
+// since plenty of real-world input spells out "Street" or "Avenue" in full.
+const STREET_SUFFIXES: &[&str] = &[
+    "ALY", "ANX", "ARC", "AVE", "BYU", "BCH", "BND", "BLF", "BLFS", "BTM", "BLVD", "BR", "BRG",
+    "BRK", "BRKS", "BG", "BGS", "BYP", "CP", "CYN", "CPE", "CSWY", "CTR", "CTRS", "CIR", "CIRS",
+    "CLF", "CLFS", "CLB", "CMN", "CMNS", "COR", "CORS", "CRSE", "CT", "CTS", "CV", "CVS", "CRK",
+    "CRES", "CRST", "XING", "XRD", "XRDS", "CURV", "DL", "DM", "DV", "DR", "DRS", "DRV", "EST",
+    "ESTS", "EXPY", "EXT", "EXTS", "FALL", "FLS", "FRY", "FLD", "FLDS", "FLT", "FLTS", "FRD",
+    "FRDS", "FRST", "FRG", "FRGS", "FRK", "FRKS", "FT", "FWY", "GDN", "GDNS", "GTWY", "GLN",
+    "GLNS", "GRN", "GRNS", "GRV", "GRVS", "HBR", "HBRS", "HVN", "HTS", "HWY", "HL", "HLS",
+    "HOLW", "INLT", "IS", "ISS", "ISLE", "JCT", "JCTS", "KY", "KYS", "KNL", "KNLS", "LK", "LKS",
+    "LAND", "LNDG", "LN", "LGT", "LGTS", "LF", "LCK", "LCKS", "LDG", "LOOP", "MALL", "MNR",
+    "MNRS", "MDW", "MDWS", "MEWS", "ML", "MLS", "MSN", "MTWY", "MT", "MTN", "MTNS", "NCK",
+    "ORCH", "OVAL", "OPAS", "PARK", "PKWY", "PASS", "PSGE", "PATH", "PIKE", "PNE", "PNES", "PL",
+    "PLN", "PLNS", "PLZ", "PT", "PTS", "PRT", "PRTS", "PR", "RADL", "RAMP", "RNCH", "RPD",
+    "RPDS", "RST", "RDG", "RDGS", "RIV", "RD", "RDS", "RTE", "ROW", "RUE", "RUN", "SHL", "SHLS",
+    "SHR", "SHRS", "SKWY", "SPG", "SPGS", "SPUR", "SQ", "SQS", "STA", "STRA", "STRM", "ST",
+    "STS", "SMT", "TER", "TRWY", "TRCE", "TRAK", "TRFY", "TRL", "TRLR", "TUNL", "TPKE", "UPAS",
+    "UN", "UNS", "VLY", "VLYS", "VIA", "VW", "VWS", "VLG", "VLGS", "VL", "VIS", "WALK", "WALKS",
+    "WALL", "WAY", "WAYS", "WL", "WLS",
+];
+
 #[derive(Debug, Clone)]
 pub struct ParsedAddress {
     pub street: String,
@@ -33,7 +56,7 @@ impl ParseOutcome {
 //   STREET, CITY, STATE ZIP[-ZIP4]
 // Anything before the last two comma segments is folded into the street
 // field, since apartment/suite lines are sometimes comma-separated too.
-pub fn parse(input: &str) -> ParseOutcome {
+pub fn parse(input: &str, strict: bool) -> ParseOutcome {
     let trimmed = input.trim();
     let mut errors = Vec::new();
 
@@ -52,7 +75,18 @@ pub fn parse(input: &str) -> ParseOutcome {
 
     let last = parts[parts.len() - 1];
     let city = parts[parts.len() - 2].to_string();
+    let primary_street = parts[0];
     let street = parts[..parts.len() - 2].join(", ");
+
+    if strict {
+        match primary_street.split_whitespace().last() {
+            Some(word) if is_standard_suffix(word) => {}
+            Some(word) => errors.push(format!(
+                "'{word}' is not a standard USPS street suffix abbreviation"
+            )),
+            None => errors.push("street has no suffix to check in --strict mode".to_string()),
+        }
+    }
 
     let tail_tokens: Vec<&str> = last.split_whitespace().collect();
     if tail_tokens.len() < 2 {
@@ -96,6 +130,11 @@ pub fn parse(input: &str) -> ParseOutcome {
     }
 }
 
+fn is_standard_suffix(word: &str) -> bool {
+    let normalized = word.trim_end_matches('.').to_uppercase();
+    STREET_SUFFIXES.contains(&normalized.as_str())
+}
+
 fn split_zip(token: &str) -> Result<(String, Option<String>), String> {
     let (zip5, zip4) = match token.split_once('-') {
         Some((a, b)) => (a, Some(b)),
@@ -122,7 +161,7 @@ mod tests {
 
     #[test]
     fn parses_plain_address() {
-        let out = parse("123 Main St, Springfield, IL 62704");
+        let out = parse("123 Main St, Springfield, IL 62704", false);
         assert!(out.is_valid());
         let addr = out.address.unwrap();
         assert_eq!(addr.street, "123 Main St");
@@ -134,7 +173,7 @@ mod tests {
 
     #[test]
     fn parses_zip_plus_four() {
-        let out = parse("1600 Amphitheatre Pkwy, Mountain View, CA 94043-1351");
+        let out = parse("1600 Amphitheatre Pkwy, Mountain View, CA 94043-1351", false);
         assert!(out.is_valid());
         let addr = out.address.unwrap();
         assert_eq!(addr.zip4.as_deref(), Some("1351"));
@@ -142,7 +181,7 @@ mod tests {
 
     #[test]
     fn folds_extra_segments_into_street() {
-        let out = parse("500 Elm St, Apt 4B, Austin, TX 73301");
+        let out = parse("500 Elm St, Apt 4B, Austin, TX 73301", false);
         assert!(out.is_valid());
         let addr = out.address.unwrap();
         assert_eq!(addr.street, "500 Elm St, Apt 4B");
@@ -150,14 +189,44 @@ mod tests {
 
     #[test]
     fn rejects_bad_state() {
-        let out = parse("1 First Ave, Nowhere, ZZ 00000");
+        let out = parse("1 First Ave, Nowhere, ZZ 00000", false);
         assert!(!out.is_valid());
     }
 
     #[test]
     fn rejects_short_input() {
-        let out = parse("just a string");
+        let out = parse("just a string", false);
         assert!(!out.is_valid());
         assert!(out.address.is_none());
+    }
+
+    #[test]
+    fn strict_accepts_standard_suffix() {
+        let out = parse("1600 Amphitheatre Pkwy, Mountain View, CA 94043", true);
+        assert!(out.is_valid());
+    }
+
+    #[test]
+    fn strict_accepts_suffix_with_trailing_period() {
+        let out = parse("123 Main St., Springfield, IL 62704", true);
+        assert!(out.is_valid());
+    }
+
+    #[test]
+    fn strict_rejects_spelled_out_suffix() {
+        let out = parse("123 Main Street, Springfield, IL 62704", true);
+        assert!(!out.is_valid());
+    }
+
+    #[test]
+    fn non_strict_ignores_spelled_out_suffix() {
+        let out = parse("123 Main Street, Springfield, IL 62704", false);
+        assert!(out.is_valid());
+    }
+
+    #[test]
+    fn strict_checks_primary_street_not_folded_segment() {
+        let out = parse("500 Elm St, Apt 4B, Austin, TX 73301", true);
+        assert!(out.is_valid());
     }
 }
