@@ -24,32 +24,60 @@ fn main() -> ExitCode {
         }
     }
 
-    let input = if input_parts.is_empty() {
-        let mut buf = String::new();
-        match io::stdin().read_to_string(&mut buf) {
-            Ok(0) => {
-                print_usage();
-                return ExitCode::from(2);
-            }
-            Ok(_) => buf,
-            Err(e) => {
-                eprintln!("error reading stdin: {e}");
-                return ExitCode::from(2);
-            }
+    if !input_parts.is_empty() {
+        let outcome = address::parse(&input_parts.join(" "), strict);
+        if json {
+            println!("{}", to_json(&outcome));
+        } else {
+            print_human(&outcome);
         }
-    } else {
-        input_parts.join(" ")
-    };
-
-    let outcome = address::parse(&input, strict);
-
-    if json {
-        println!("{}", to_json(&outcome));
-    } else {
-        print_human(&outcome);
+        return if outcome.is_valid() {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::from(1)
+        };
     }
 
-    if outcome.is_valid() {
+    let mut buf = String::new();
+    match io::stdin().read_to_string(&mut buf) {
+        Ok(0) => {
+            print_usage();
+            return ExitCode::from(2);
+        }
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("error reading stdin: {e}");
+            return ExitCode::from(2);
+        }
+    }
+
+    let outcomes = address::parse_lines(&buf, strict);
+    if outcomes.is_empty() {
+        print_usage();
+        return ExitCode::from(2);
+    }
+
+    let all_valid = outcomes.iter().all(ParseOutcome::is_valid);
+
+    if outcomes.len() == 1 {
+        if json {
+            println!("{}", to_json(&outcomes[0]));
+        } else {
+            print_human(&outcomes[0]);
+        }
+    } else if json {
+        let items: Vec<String> = outcomes.iter().map(to_json).collect();
+        println!("[{}]", items.join(","));
+    } else {
+        for (i, outcome) in outcomes.iter().enumerate() {
+            if i > 0 {
+                println!();
+            }
+            print_human(outcome);
+        }
+    }
+
+    if all_valid {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(1)
@@ -62,6 +90,10 @@ fn print_usage() {
     eprintln!("USAGE:");
     eprintln!("    addrparts [--json] [--strict] \"123 Main St, Springfield, IL 62704\"");
     eprintln!("    echo \"123 Main St, Springfield, IL 62704\" | addrparts [--json] [--strict]");
+    eprintln!();
+    eprintln!("Stdin may contain multiple addresses, one per line. Blank lines are");
+    eprintln!("skipped. With more than one address, --json emits a JSON array instead");
+    eprintln!("of a single object, and human output separates addresses with a blank line.");
     eprintln!();
     eprintln!("Expected form: STREET, CITY, STATE ZIP[-ZIP4]");
     eprintln!("--strict requires the street to end in a standard USPS suffix");

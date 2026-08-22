@@ -130,6 +130,17 @@ pub fn parse(input: &str, strict: bool) -> ParseOutcome {
     }
 }
 
+// Splits on newlines and parses each non-blank line independently, for
+// batch input piped in one address per line.
+pub fn parse_lines(input: &str, strict: bool) -> Vec<ParseOutcome> {
+    input
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .map(|line| parse(line, strict))
+        .collect()
+}
+
 fn is_standard_suffix(word: &str) -> bool {
     let normalized = word.trim_end_matches('.').to_uppercase();
     STREET_SUFFIXES.contains(&normalized.as_str())
@@ -228,5 +239,26 @@ mod tests {
     fn strict_checks_primary_street_not_folded_segment() {
         let out = parse("500 Elm St, Apt 4B, Austin, TX 73301", true);
         assert!(out.is_valid());
+    }
+
+    #[test]
+    fn parse_lines_skips_blank_lines() {
+        let input = "123 Main St, Springfield, IL 62704\n\n   \n1 First Ave, Nowhere, ZZ 00000\n";
+        let outcomes = parse_lines(input, false);
+        assert_eq!(outcomes.len(), 2);
+        assert!(outcomes[0].is_valid());
+        assert!(!outcomes[1].is_valid());
+    }
+
+    #[test]
+    fn parse_lines_trims_each_line() {
+        let outcomes = parse_lines("  123 Main St, Springfield, IL 62704  \n", false);
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].input, "123 Main St, Springfield, IL 62704");
+    }
+
+    #[test]
+    fn parse_lines_empty_input_yields_no_outcomes() {
+        assert!(parse_lines("\n\n", false).is_empty());
     }
 }

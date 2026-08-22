@@ -32,6 +32,21 @@ Or pipe it in:
 echo "500 Elm St, Apt 4B, Austin, TX 73301" | addrparts
 ```
 
+### Batch input
+
+Piped input can hold more than one address, one per line. Blank lines are
+skipped:
+
+```
+printf "123 Main St, Springfield, IL 62704\n1 First Ave, Nowhere, ZZ 00000\n" | addrparts
+```
+
+Human output prints each address's block separated by a blank line. With
+`--json`, two or more addresses produce a JSON array instead of a single
+object; a single address (piped or given as an argument) still produces one
+object, unchanged from before. The exit code reflects whether *all* addresses
+in the batch were valid.
+
 ### JSON output
 
 ```
