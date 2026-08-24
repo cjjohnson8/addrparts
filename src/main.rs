@@ -10,12 +10,14 @@ fn main() -> ExitCode {
 
     let mut json = false;
     let mut strict = false;
+    let mut format = false;
     let mut input_parts: Vec<String> = Vec::new();
 
     for arg in &args {
         match arg.as_str() {
             "--json" => json = true,
             "--strict" => strict = true,
+            "--format" => format = true,
             "-h" | "--help" => {
                 print_usage();
                 return ExitCode::from(2);
@@ -26,7 +28,9 @@ fn main() -> ExitCode {
 
     if !input_parts.is_empty() {
         let outcome = address::parse(&input_parts.join(" "), strict);
-        if json {
+        if format {
+            print_format(&outcome);
+        } else if json {
             println!("{}", to_json(&outcome));
         } else {
             print_human(&outcome);
@@ -60,10 +64,16 @@ fn main() -> ExitCode {
     let all_valid = outcomes.iter().all(ParseOutcome::is_valid);
 
     if outcomes.len() == 1 {
-        if json {
+        if format {
+            print_format(&outcomes[0]);
+        } else if json {
             println!("{}", to_json(&outcomes[0]));
         } else {
             print_human(&outcomes[0]);
+        }
+    } else if format {
+        for outcome in &outcomes {
+            print_format(outcome);
         }
     } else if json {
         let items: Vec<String> = outcomes.iter().map(to_json).collect();
@@ -88,8 +98,8 @@ fn print_usage() {
     eprintln!("addrparts - parse and validate a single-line US mailing address");
     eprintln!();
     eprintln!("USAGE:");
-    eprintln!("    addrparts [--json] [--strict] \"123 Main St, Springfield, IL 62704\"");
-    eprintln!("    echo \"123 Main St, Springfield, IL 62704\" | addrparts [--json] [--strict]");
+    eprintln!("    addrparts [--json] [--strict] [--format] \"123 Main St, Springfield, IL 62704\"");
+    eprintln!("    echo \"123 Main St, Springfield, IL 62704\" | addrparts [--json] [--strict] [--format]");
     eprintln!();
     eprintln!("Stdin may contain multiple addresses, one per line. Blank lines are");
     eprintln!("skipped. With more than one address, --json emits a JSON array instead");
@@ -98,7 +108,24 @@ fn print_usage() {
     eprintln!("Expected form: STREET, CITY, STATE ZIP[-ZIP4]");
     eprintln!("--strict requires the street to end in a standard USPS suffix");
     eprintln!("abbreviation (St, Ave, Blvd, ...) instead of a spelled-out word");
+    eprintln!();
+    eprintln!("--format prints the parsed fields rejoined into a single line");
+    eprintln!("(state upper-cased) instead of the usual report, one line per");
+    eprintln!("address. Addresses that couldn't be split into fields at all are");
+    eprintln!("skipped with a message on stderr. Takes precedence over --json.");
+    eprintln!();
     eprintln!("Exit codes: 0 valid, 1 invalid, 2 usage error");
+}
+
+// Prints the reassembled single-line form of an address that was split
+// far enough to have street/city/state/zip fields, even if it failed
+// other validation (e.g. an unrecognized state code). Addresses that
+// couldn't be split at all have nothing to reassemble.
+fn print_format(outcome: &ParseOutcome) {
+    match &outcome.address {
+        Some(addr) => println!("{}", addr.to_single_line()),
+        None => eprintln!("skipped (unparseable): {}", outcome.input),
+    }
 }
 
 fn print_human(outcome: &ParseOutcome) {

@@ -52,6 +52,22 @@ impl ParseOutcome {
     }
 }
 
+impl ParsedAddress {
+    // Rejoins the parsed fields into the same single-line form the parser
+    // accepts as input. Useful for normalizing whitespace and casing (the
+    // state code is upper-cased during parsing) without hand-editing the
+    // original string.
+    pub fn to_single_line(&self) -> String {
+        match &self.zip4 {
+            Some(zip4) => format!(
+                "{}, {}, {} {}-{}",
+                self.street, self.city, self.state, self.zip5, zip4
+            ),
+            None => format!("{}, {}, {} {}", self.street, self.city, self.state, self.zip5),
+        }
+    }
+}
+
 // Accepts the common single-line form:
 //   STREET, CITY, STATE ZIP[-ZIP4]
 // Anything before the last two comma segments is folded into the street
@@ -260,5 +276,32 @@ mod tests {
     #[test]
     fn parse_lines_empty_input_yields_no_outcomes() {
         assert!(parse_lines("\n\n", false).is_empty());
+    }
+
+    #[test]
+    fn to_single_line_reassembles_without_zip4() {
+        let out = parse("123 Main St, Springfield, IL 62704", false);
+        let addr = out.address.unwrap();
+        assert_eq!(addr.to_single_line(), "123 Main St, Springfield, IL 62704");
+    }
+
+    #[test]
+    fn to_single_line_reassembles_with_zip4() {
+        let out = parse("1600 Amphitheatre Pkwy, Mountain View, CA 94043-1351", false);
+        let addr = out.address.unwrap();
+        assert_eq!(
+            addr.to_single_line(),
+            "1600 Amphitheatre Pkwy, Mountain View, CA 94043-1351"
+        );
+    }
+
+    #[test]
+    fn to_single_line_uppercases_state_and_keeps_folded_segments() {
+        let out = parse("500 Elm St, Apt 4B, Austin, tx 73301", false);
+        let addr = out.address.unwrap();
+        assert_eq!(
+            addr.to_single_line(),
+            "500 Elm St, Apt 4B, Austin, TX 73301"
+        );
     }
 }

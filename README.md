@@ -88,6 +88,27 @@ A trailing period on the abbreviation (`St.`) is accepted. Extra folded
 segments (apartment, suite) are not checked - only the first comma segment,
 which is assumed to be the actual street line.
 
+### Canonical single-line output
+
+`--format` rejoins the parsed fields into a single line instead of printing
+the usual report - useful for normalizing whitespace and casing (the state
+code comes back upper-cased) without hand-editing the original string:
+
+```
+addrparts --format "123 main st, springfield, il 62704"
+```
+
+```
+123 main st, Springfield, IL 62704
+```
+
+It reassembles whatever fields were split out even if the address failed
+other validation (an unrecognized state code, say), since the fields are
+still there to rejoin. An address that couldn't be split into fields at all
+has nothing to reassemble - it's skipped with a message on stderr instead.
+With batch input, `--format` prints one line per address. It takes
+precedence over `--json` if both are given.
+
 ### Exit codes
 
 - `0` - parsed and valid
