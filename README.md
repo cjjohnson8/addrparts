@@ -126,6 +126,23 @@ Extra comma-separated segments before the last two (e.g. an apartment or
 suite on its own segment) get folded back into the street field, so
 `500 Elm St, Apt 4B, Austin, TX 73301` still parses correctly.
 
+### Addresses without commas
+
+If the input doesn't split into at least three comma segments, `addrparts`
+falls back to a whitespace-only parse: the last two tokens are taken as
+state and ZIP, and the street/city boundary is found by looking for the
+rightmost token that matches a standard USPS suffix abbreviation (the same
+list `--strict` checks against). That means
+
+```
+addrparts "123 Main St Springfield IL 62704"
+```
+
+parses the same as the comma-separated form. It only works when the street
+ends in a recognizable abbreviation, though - `123 Main Street Springfield
+IL 62704` has no structural marker for where the street name ends, so it
+still fails to parse.
+
 ## Building
 
 ```
@@ -139,6 +156,7 @@ No third-party crates - standard library only.
 - Assumes US addresses and the two-letter USPS state/territory code list.
 - Assumes the street and city are unambiguous once the trailing
   `STATE ZIP` segment is peeled off. Addresses that omit commas entirely
-  won't parse.
+  only parse if the street ends in a recognizable USPS suffix
+  abbreviation - see "Addresses without commas" above.
 - Doesn't validate that a ZIP code actually belongs to the given state or
   city.

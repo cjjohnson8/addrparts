@@ -72,27 +72,38 @@ impl ParsedAddress {
 //   STREET, CITY, STATE ZIP[-ZIP4]
 // Anything before the last two comma segments is folded into the street
 // field, since apartment/suite lines are sometimes comma-separated too.
+//
+// If there aren't enough comma segments, falls back to whitespace-only
+// parsing (see parse_whitespace_fallback) rather than giving up outright.
 pub fn parse(input: &str, strict: bool) -> ParseOutcome {
     let trimmed = input.trim();
     let mut errors = Vec::new();
 
     let parts: Vec<&str> = trimmed.split(',').map(|p| p.trim()).collect();
-    if parts.len() < 3 || parts.iter().any(|p| p.is_empty()) {
-        errors.push(
-            "expected at least three non-empty comma-separated segments: street, city, state zip"
-                .to_string(),
-        );
-        return ParseOutcome {
-            input: trimmed.to_string(),
-            address: None,
-            errors,
-        };
-    }
-
-    let last = parts[parts.len() - 1];
-    let city = parts[parts.len() - 2].to_string();
-    let primary_street = parts[0];
-    let street = parts[..parts.len() - 2].join(", ");
+    let (street, primary_street, city, tail) = if parts.len() < 3 || parts.iter().any(|p| p.is_empty()) {
+        match parse_whitespace_fallback(trimmed) {
+            Some((street, city, tail)) => (street.clone(), street, city, tail),
+            None => {
+                errors.push(
+                    "expected at least three non-empty comma-separated segments (street, city, \
+                     state zip), or a whitespace-only address ending in STATE ZIP with a \
+                     recognizable street suffix"
+                        .to_string(),
+                );
+                return ParseOutcome {
+                    input: trimmed.to_string(),
+                    address: None,
+                    errors,
+                };
+            }
+        }
+    } else {
+        let last = parts[parts.len() - 1].to_string();
+        let city = parts[parts.len() - 2].to_string();
+        let street = parts[..parts.len() - 2].join(", ");
+        let primary_street = parts[0].to_string();
+        (street, primary_street, city, last)
+    };
 
     if strict {
         match primary_street.split_whitespace().last() {
@@ -104,10 +115,10 @@ pub fn parse(input: &str, strict: bool) -> ParseOutcome {
         }
     }
 
-    let tail_tokens: Vec<&str> = last.split_whitespace().collect();
+    let tail_tokens: Vec<&str> = tail.split_whitespace().collect();
     if tail_tokens.len() < 2 {
         errors.push(format!(
-            "could not split '{last}' into a state and a ZIP code"
+            "could not split '{tail}' into a state and a ZIP code"
         ));
         return ParseOutcome {
             input: trimmed.to_string(),
@@ -144,6 +155,43 @@ pub fn parse(input: &str, strict: bool) -> ParseOutcome {
         address: Some(address),
         errors,
     }
+}
+
+// Splits a comma-less (or comma-starved) address into street/city/"state
+// zip" by whitespace alone. The last two tokens are assumed to be STATE and
+// ZIP. To find where the street ends and the city begins, it looks for the
+// rightmost token among what's left that matches a standard USPS suffix
+// abbreviation (St, Ave, Pkwy, ...) - the same list --strict checks against.
+// Without a comma, that's the only structural signal available; addresses
+// where the suffix is spelled out in full (e.g. "Street") can't be split
+// this way and are left to fail with an error.
+fn parse_whitespace_fallback(trimmed: &str) -> Option<(String, String, String)> {
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    // Minimum viable shape: one street word, a suffix, a city word, a
+    // state, and a ZIP.
+    if tokens.len() < 5 {
+        return None;
+    }
+
+    let state_idx = tokens.len() - 2;
+    let middle = &tokens[..state_idx];
+
+    let mut suffix_idx = None;
+    for (i, tok) in middle.iter().enumerate() {
+        if i == middle.len() - 1 {
+            // Leave at least one token for the city.
+            break;
+        }
+        if is_standard_suffix(tok) {
+            suffix_idx = Some(i);
+        }
+    }
+
+    let suffix_idx = suffix_idx?;
+    let street = middle[..=suffix_idx].join(" ");
+    let city = middle[suffix_idx + 1..].join(" ");
+    let tail = format!("{} {}", tokens[state_idx], tokens[tokens.len() - 1]);
+    Some((street, city, tail))
 }
 
 // Splits on newlines and parses each non-blank line independently, for
@@ -293,6 +341,51 @@ mod tests {
             addr.to_single_line(),
             "1600 Amphitheatre Pkwy, Mountain View, CA 94043-1351"
         );
+    }
+
+    #[test]
+    fn whitespace_fallback_parses_address_without_commas() {
+        let out = parse("123 Main St Springfield IL 62704", false);
+        assert!(out.is_valid());
+        let addr = out.address.unwrap();
+        assert_eq!(addr.street, "123 Main St");
+        assert_eq!(addr.city, "Springfield");
+        assert_eq!(addr.state, "IL");
+        assert_eq!(addr.zip5, "62704");
+    }
+
+    #[test]
+    fn whitespace_fallback_handles_zip_plus_four() {
+        let out = parse("1600 Amphitheatre Pkwy Mountain View CA 94043-1351", false);
+        assert!(out.is_valid());
+        let addr = out.address.unwrap();
+        assert_eq!(addr.street, "1600 Amphitheatre Pkwy");
+        assert_eq!(addr.city, "Mountain View");
+        assert_eq!(addr.zip4.as_deref(), Some("1351"));
+    }
+
+    #[test]
+    fn whitespace_fallback_picks_rightmost_suffix_match() {
+        // "Park" is itself a standard suffix abbreviation, so the fallback
+        // must not stop there when a later, better boundary exists.
+        let out = parse("1 Main Park Ave Parkville OH 43000", false);
+        assert!(out.is_valid());
+        let addr = out.address.unwrap();
+        assert_eq!(addr.street, "1 Main Park Ave");
+        assert_eq!(addr.city, "Parkville");
+    }
+
+    #[test]
+    fn whitespace_fallback_fails_without_recognizable_suffix() {
+        let out = parse("PO Box 123 Springfield IL 62704", false);
+        assert!(!out.is_valid());
+        assert!(out.address.is_none());
+    }
+
+    #[test]
+    fn whitespace_fallback_respects_strict_mode() {
+        let out = parse("123 Main St Springfield IL 62704", true);
+        assert!(out.is_valid());
     }
 
     #[test]
