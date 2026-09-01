@@ -138,6 +138,9 @@ fn print_human(outcome: &ParseOutcome) {
                 Some(z4) => println!("zip:    {}-{}", addr.zip5, z4),
                 None => println!("zip:    {}", addr.zip5),
             }
+            if let Some(po_box) = &addr.po_box {
+                println!("po box: {po_box}");
+            }
         }
         None => println!("(no fields could be parsed)"),
     }
@@ -167,6 +170,10 @@ fn to_json(outcome: &ParseOutcome) -> String {
             match &addr.zip4 {
                 Some(z4) => out.push_str(&format!(",\"zip4\":{}", json_string(z4))),
                 None => out.push_str(",\"zip4\":null"),
+            }
+            match &addr.po_box {
+                Some(po_box) => out.push_str(&format!(",\"po_box\":{}", json_string(po_box))),
+                None => out.push_str(",\"po_box\":null"),
             }
             out.push('}');
         }

@@ -37,6 +37,10 @@ pub struct ParsedAddress {
     pub state: String,
     pub zip5: String,
     pub zip4: Option<String>,
+    // Populated when the street line is a PO box rather than a delivery
+    // address ("PO Box 123", "P.O. Box 123", "Post Office Box 123", ...).
+    // `street` still holds the full original text either way.
+    pub po_box: Option<String>,
 }
 
 #[derive(Debug)]
@@ -105,7 +109,18 @@ pub fn parse(input: &str, strict: bool) -> ParseOutcome {
         (street, primary_street, city, last)
     };
 
-    if strict {
+    let po_box_match = detect_po_box(&primary_street);
+    let po_box = match &po_box_match {
+        Some(Some(number)) => Some(number.clone()),
+        Some(None) => {
+            errors.push("PO box line has no box number".to_string());
+            None
+        }
+        None => None,
+    };
+
+    // A PO box has no street suffix to check, so --strict skips it there.
+    if strict && po_box_match.is_none() {
         match primary_street.split_whitespace().last() {
             Some(word) if is_standard_suffix(word) => {}
             Some(word) => errors.push(format!(
@@ -148,6 +163,7 @@ pub fn parse(input: &str, strict: bool) -> ParseOutcome {
         state: state_raw,
         zip5,
         zip4,
+        po_box,
     };
 
     ParseOutcome {
@@ -203,6 +219,50 @@ pub fn parse_lines(input: &str, strict: bool) -> Vec<ParseOutcome> {
         .filter(|line| !line.is_empty())
         .map(|line| parse(line, strict))
         .collect()
+}
+
+// Recognizes a PO box line and pulls out the box number.
+//   Some(Some(number)) - matched a PO box prefix, number extracted
+//   Some(None)         - matched a PO box prefix, but nothing followed it
+//   None                - not a PO box line at all
+//
+// Periods are stripped before matching so "P.O. Box", "PO Box", and
+// "P.O.Box" (no space before "Box") all normalize the same way. "P O Box"
+// (each letter its own token) is also accepted since it shows up often
+// enough in scraped data.
+fn detect_po_box(street: &str) -> Option<Option<String>> {
+    let words: Vec<&str> = street.split_whitespace().collect();
+    if words.is_empty() {
+        return None;
+    }
+
+    let normalized: Vec<String> = words
+        .iter()
+        .map(|w| w.chars().filter(|c| *c != '.').collect::<String>().to_uppercase())
+        .collect();
+
+    let prefix_len = if normalized[0] == "POBOX" {
+        Some(1)
+    } else if starts_with_seq(&normalized, &["PO", "BOX"]) {
+        Some(2)
+    } else if starts_with_seq(&normalized, &["P", "O", "BOX"]) {
+        Some(3)
+    } else if starts_with_seq(&normalized, &["POST", "OFFICE", "BOX"]) {
+        Some(3)
+    } else {
+        None
+    }?;
+
+    let number = words[prefix_len..].join(" ");
+    if number.is_empty() {
+        Some(None)
+    } else {
+        Some(Some(number))
+    }
+}
+
+fn starts_with_seq(normalized: &[String], seq: &[&str]) -> bool {
+    normalized.len() >= seq.len() && normalized.iter().zip(seq).all(|(a, b)| a == b)
 }
 
 fn is_standard_suffix(word: &str) -> bool {
@@ -385,6 +445,60 @@ mod tests {
     #[test]
     fn whitespace_fallback_respects_strict_mode() {
         let out = parse("123 Main St Springfield IL 62704", true);
+        assert!(out.is_valid());
+    }
+
+    #[test]
+    fn detects_plain_po_box() {
+        let out = parse("PO Box 456, Austin, TX 73301", false);
+        assert!(out.is_valid());
+        let addr = out.address.unwrap();
+        assert_eq!(addr.po_box.as_deref(), Some("456"));
+        assert_eq!(addr.street, "PO Box 456");
+    }
+
+    #[test]
+    fn detects_po_box_with_periods() {
+        let out = parse("P.O. Box 123, Austin, TX 73301", false);
+        assert!(out.is_valid());
+        let addr = out.address.unwrap();
+        assert_eq!(addr.po_box.as_deref(), Some("123"));
+    }
+
+    #[test]
+    fn detects_po_box_spelled_out() {
+        let out = parse("Post Office Box 789, Austin, TX 73301", false);
+        assert!(out.is_valid());
+        let addr = out.address.unwrap();
+        assert_eq!(addr.po_box.as_deref(), Some("789"));
+    }
+
+    #[test]
+    fn detects_po_box_spaced_out() {
+        let out = parse("P O Box 42, Austin, TX 73301", false);
+        assert!(out.is_valid());
+        let addr = out.address.unwrap();
+        assert_eq!(addr.po_box.as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn regular_street_has_no_po_box() {
+        let out = parse("123 Main St, Springfield, IL 62704", false);
+        let addr = out.address.unwrap();
+        assert_eq!(addr.po_box, None);
+    }
+
+    #[test]
+    fn po_box_missing_number_is_invalid() {
+        let out = parse("PO Box, Austin, TX 73301", false);
+        assert!(!out.is_valid());
+        let addr = out.address.unwrap();
+        assert_eq!(addr.po_box, None);
+    }
+
+    #[test]
+    fn strict_mode_skips_suffix_check_for_po_box() {
+        let out = parse("PO Box 123, Austin, TX 73301", true);
         assert!(out.is_valid());
     }
 

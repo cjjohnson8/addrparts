@@ -54,7 +54,7 @@ addrparts --json "1600 Amphitheatre Pkwy, Mountain View, CA 94043-1351"
 ```
 
 ```json
-{"input":"1600 Amphitheatre Pkwy, Mountain View, CA 94043-1351","valid":true,"address":{"street":"1600 Amphitheatre Pkwy","city":"Mountain View","state":"CA","zip5":"94043","zip4":"1351"},"errors":[]}
+{"input":"1600 Amphitheatre Pkwy, Mountain View, CA 94043-1351","valid":true,"address":{"street":"1600 Amphitheatre Pkwy","city":"Mountain View","state":"CA","zip5":"94043","zip4":"1351","po_box":null},"errors":[]}
 ```
 
 On a bad address the JSON still comes back well-formed, with `valid: false`
@@ -65,7 +65,24 @@ addrparts --json "1 First Ave, Nowhere, ZZ 00000"
 ```
 
 ```json
-{"input":"1 First Ave, Nowhere, ZZ 00000","valid":false,"address":{"street":"1 First Ave","city":"Nowhere","state":"ZZ","zip5":"00000","zip4":null},"errors":["'ZZ' is not a recognized state or territory code"]}
+{"input":"1 First Ave, Nowhere, ZZ 00000","valid":false,"address":{"street":"1 First Ave","city":"Nowhere","state":"ZZ","zip5":"00000","zip4":null,"po_box":null},"errors":["'ZZ' is not a recognized state or territory code"]}
+```
+
+### PO boxes
+
+When the street line is a PO box (`PO Box 123`, `P.O. Box 123`, `P O Box
+123`, `Post Office Box 123`), the box number is pulled out into its own
+`po_box` field alongside the usual `street` text - `street` still holds the
+full original line. `--strict` doesn't require a USPS suffix abbreviation
+on a PO box line, since there isn't one to check. A PO box line with no
+number after it (`PO Box, Austin, TX 73301`) is invalid.
+
+```
+addrparts --json "PO Box 456, Austin, TX 73301"
+```
+
+```json
+{"input":"PO Box 456, Austin, TX 73301","valid":true,"address":{"street":"PO Box 456","city":"Austin","state":"TX","zip5":"73301","zip4":null,"po_box":"456"},"errors":[]}
 ```
 
 ### Strict mode
