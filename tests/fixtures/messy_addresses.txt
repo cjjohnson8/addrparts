@@ -1,0 +1,25 @@
+# Real-world-shaped messy address strings, one per line, as
+#   valid|<address>
+# or
+#   invalid|<address>
+# Blank lines and lines starting with # are ignored. See tests/fixtures.rs.
+
+valid|123 Main St, Springfield, IL 62704
+valid|  1600 Amphitheatre Pkwy ,  Mountain View ,  CA   94043-1351
+valid|1600 amphitheatre pkwy, mountain view, ca 94043-1351
+valid|PO BOX 789, Austin, TX 73301
+valid|P.O.Box 55, Reno, NV 89501
+valid|Post Office Box 42, Shelbyville, KY 40065
+valid|P O Box 12, Troy, MI 48007
+valid|500 N. Elm St, Apt #4B, Austin, TX 73301
+valid|10 Main St,Springfield,IL 62704
+valid|Route 9, Chatham, NY 12037
+valid|5th Ave, New York, NY 10001
+valid|Calle Luna 100, San Juan, PR 00901
+invalid|123 Main Street Springfield IL 62704
+invalid|1 Elm St, Troy, NY 1218
+invalid|42 Wallaby Way, Sydney, NSW 20000
+invalid|123 Main St, Springfield, Illinois 62704
+invalid|PO Box, Nashville, TN 37201
+invalid|123 Main St, Springfield, IL 941431351
+invalid|123 Main St, Springfield, IL. 62704

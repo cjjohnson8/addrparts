@@ -1,6 +1,4 @@
-mod address;
-
-use address::ParseOutcome;
+use addrparts::address::{self, ParseOutcome};
 use std::env;
 use std::io::{self, Read};
 use std::process::ExitCode;

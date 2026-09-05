@@ -5,6 +5,10 @@ edition = "2021"
 description = "Parse and validate a single-line US mailing address"
 license = "MIT"
 
+[lib]
+name = "addrparts"
+path = "src/lib.rs"
+
 [[bin]]
 name = "addrparts"
 path = "src/main.rs"
