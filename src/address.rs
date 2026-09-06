@@ -80,7 +80,8 @@ impl ParsedAddress {
 // If there aren't enough comma segments, falls back to whitespace-only
 // parsing (see parse_whitespace_fallback) rather than giving up outright.
 pub fn parse(input: &str, strict: bool) -> ParseOutcome {
-    let trimmed = input.trim();
+    let original = input.trim();
+    let trimmed = strip_country_suffix(original);
     let mut errors = Vec::new();
 
     let parts: Vec<&str> = trimmed.split(',').map(|p| p.trim()).collect();
@@ -95,7 +96,7 @@ pub fn parse(input: &str, strict: bool) -> ParseOutcome {
                         .to_string(),
                 );
                 return ParseOutcome {
-                    input: trimmed.to_string(),
+                    input: original.to_string(),
                     address: None,
                     errors,
                 };
@@ -136,7 +137,7 @@ pub fn parse(input: &str, strict: bool) -> ParseOutcome {
             "could not split '{tail}' into a state and a ZIP code"
         ));
         return ParseOutcome {
-            input: trimmed.to_string(),
+            input: original.to_string(),
             address: None,
             errors,
         };
@@ -167,9 +168,34 @@ pub fn parse(input: &str, strict: bool) -> ParseOutcome {
     };
 
     ParseOutcome {
-        input: trimmed.to_string(),
+        input: original.to_string(),
         address: Some(address),
         errors,
+    }
+}
+
+// Strips a trailing country designator ("USA", "U.S.A.", "US", "United
+// States", "United States of America") so it doesn't get mistaken for a
+// city/state/zip segment. Only recognized after the last comma, since
+// that's the only place a country name shows up in single-line US
+// addresses - anywhere else it's more likely to be part of a street or
+// city name.
+fn strip_country_suffix(input: &str) -> &str {
+    let (rest, last_segment) = match input.rsplit_once(',') {
+        Some(pair) => pair,
+        None => return input,
+    };
+
+    let normalized: String = last_segment
+        .trim()
+        .chars()
+        .filter(|c| *c != '.')
+        .collect::<String>()
+        .to_uppercase();
+
+    match normalized.as_str() {
+        "USA" | "US" | "UNITED STATES" | "UNITED STATES OF AMERICA" => rest.trim_end(),
+        _ => input,
     }
 }
 
@@ -500,6 +526,47 @@ mod tests {
     fn strict_mode_skips_suffix_check_for_po_box() {
         let out = parse("PO Box 123, Austin, TX 73301", true);
         assert!(out.is_valid());
+    }
+
+    #[test]
+    fn strips_usa_country_suffix() {
+        let out = parse("1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA", false);
+        assert!(out.is_valid());
+        let addr = out.address.unwrap();
+        assert_eq!(addr.city, "Mountain View");
+        assert_eq!(addr.zip5, "94043");
+    }
+
+    #[test]
+    fn strips_country_suffix_variants_case_insensitively() {
+        for suffix in ["usa", "U.S.A.", "us", "United States", "united states of america"] {
+            let input = format!("123 Main St, Springfield, IL 62704, {suffix}");
+            let out = parse(&input, false);
+            assert!(out.is_valid(), "failed for suffix {suffix:?}: {:?}", out.errors);
+        }
+    }
+
+    #[test]
+    fn country_suffix_stripping_preserves_original_input_field() {
+        let out = parse("123 Main St, Springfield, IL 62704, USA", false);
+        assert_eq!(out.input, "123 Main St, Springfield, IL 62704, USA");
+    }
+
+    #[test]
+    fn does_not_strip_a_city_that_merely_resembles_a_country_name() {
+        // "US" is not a real city, but this guards against the country
+        // check swallowing a two-word state/zip tail by mistake.
+        let out = parse("123 Main St, Springfield, IL 62704", false);
+        assert!(out.is_valid());
+        assert_eq!(out.address.unwrap().city, "Springfield");
+    }
+
+    #[test]
+    fn whitespace_fallback_strips_trailing_usa() {
+        let out = parse("123 Main St Springfield IL 62704, USA", false);
+        assert!(out.is_valid());
+        let addr = out.address.unwrap();
+        assert_eq!(addr.city, "Springfield");
     }
 
     #[test]

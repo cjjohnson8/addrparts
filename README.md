@@ -160,6 +160,28 @@ ends in a recognizable abbreviation, though - `123 Main Street Springfield
 IL 62704` has no structural marker for where the street name ends, so it
 still fails to parse.
 
+### Country suffix
+
+A trailing country designator after the last comma (`USA`, `U.S.A.`, `US`,
+`United States`, `United States of America` - matched case-insensitively)
+is stripped before parsing, so it doesn't get mistaken for part of the
+`STATE ZIP` tail:
+
+```
+addrparts "1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA"
+```
+
+```
+street: 1600 Amphitheatre Pkwy
+city:   Mountain View
+state:  CA
+zip:    94043
+valid:  true
+```
+
+The `input` field in JSON output still reflects what was actually passed
+in, country suffix included.
+
 ## Building
 
 ```
