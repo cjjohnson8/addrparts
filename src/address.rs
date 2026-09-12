@@ -30,6 +30,21 @@ const STREET_SUFFIXES: &[&str] = &[
     "WALL", "WAY", "WAYS", "WL", "WLS",
 ];
 
+// USPS Publication 28 directional abbreviations, spelled-out form paired
+// with its standard abbreviation. Checked only in --strict mode, and only
+// when a directional word actually shows up - most streets don't have one,
+// so this never fires on the common case.
+const DIRECTIONALS: &[(&str, &str)] = &[
+    ("NORTH", "N"),
+    ("SOUTH", "S"),
+    ("EAST", "E"),
+    ("WEST", "W"),
+    ("NORTHEAST", "NE"),
+    ("NORTHWEST", "NW"),
+    ("SOUTHEAST", "SE"),
+    ("SOUTHWEST", "SW"),
+];
+
 #[derive(Debug, Clone)]
 pub struct ParsedAddress {
     pub street: String,
@@ -120,7 +135,8 @@ pub fn parse(input: &str, strict: bool) -> ParseOutcome {
         None => None,
     };
 
-    // A PO box has no street suffix to check, so --strict skips it there.
+    // A PO box has no street suffix or directional to check, so --strict
+    // skips both there.
     if strict && po_box_match.is_none() {
         match primary_street.split_whitespace().last() {
             Some(word) if is_standard_suffix(word) => {}
@@ -128,6 +144,12 @@ pub fn parse(input: &str, strict: bool) -> ParseOutcome {
                 "'{word}' is not a standard USPS street suffix abbreviation"
             )),
             None => errors.push("street has no suffix to check in --strict mode".to_string()),
+        }
+
+        if let Some((word, abbr)) = find_spelled_out_directional(&primary_street) {
+            errors.push(format!(
+                "'{word}' should be abbreviated as '{abbr}' in --strict mode"
+            ));
         }
     }
 
@@ -294,6 +316,20 @@ fn starts_with_seq(normalized: &[String], seq: &[&str]) -> bool {
 fn is_standard_suffix(word: &str) -> bool {
     let normalized = word.trim_end_matches('.').to_uppercase();
     STREET_SUFFIXES.contains(&normalized.as_str())
+}
+
+// Looks for a spelled-out directional word ("North", "Southwest", ...)
+// anywhere in the street line and returns it in its original casing along
+// with its standard abbreviation. Words that are already abbreviated (N,
+// SW, ...) don't match anything here and are left alone.
+fn find_spelled_out_directional(street: &str) -> Option<(&str, &str)> {
+    street.split_whitespace().find_map(|word| {
+        let normalized = word.trim_end_matches('.').to_uppercase();
+        DIRECTIONALS
+            .iter()
+            .find(|(full, _)| *full == normalized)
+            .map(|(_, abbr)| (word, *abbr))
+    })
 }
 
 fn split_zip(token: &str) -> Result<(String, Option<String>), String> {
@@ -525,6 +561,46 @@ mod tests {
     #[test]
     fn strict_mode_skips_suffix_check_for_po_box() {
         let out = parse("PO Box 123, Austin, TX 73301", true);
+        assert!(out.is_valid());
+    }
+
+    #[test]
+    fn strict_rejects_spelled_out_directional_prefix() {
+        let out = parse("123 North Main St, Springfield, IL 62704", true);
+        assert!(!out.is_valid());
+        assert!(out.errors.iter().any(|e| e.contains("'North'") && e.contains("'N'")));
+    }
+
+    #[test]
+    fn strict_accepts_abbreviated_directional_prefix() {
+        let out = parse("123 N Main St, Springfield, IL 62704", true);
+        assert!(out.is_valid());
+    }
+
+    #[test]
+    fn strict_rejects_spelled_out_directional_suffix() {
+        let out = parse("123 Main St Northwest, Springfield, IL 62704", true);
+        assert!(!out.is_valid());
+        assert!(out.errors.iter().any(|e| e.contains("'Northwest'") && e.contains("'NW'")));
+    }
+
+    #[test]
+    fn non_strict_ignores_spelled_out_directional() {
+        let out = parse("123 North Main St, Springfield, IL 62704", false);
+        assert!(out.is_valid());
+    }
+
+    #[test]
+    fn strict_does_not_flag_street_name_resembling_directional() {
+        // "Westminster" contains "West" as a prefix but isn't the word
+        // "West" on its own, so it must not trip the directional check.
+        let out = parse("1 Westminster Ave, Springfield, IL 62704", true);
+        assert!(out.is_valid());
+    }
+
+    #[test]
+    fn strict_directional_check_skips_po_box() {
+        let out = parse("PO Box 123 North, Austin, TX 73301", true);
         assert!(out.is_valid());
     }
 

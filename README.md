@@ -105,6 +105,20 @@ A trailing period on the abbreviation (`St.`) is accepted. Extra folded
 segments (apartment, suite) are not checked - only the first comma segment,
 which is assumed to be the actual street line.
 
+`--strict` also requires a directional (`North`, `Southwest`, ...) to be
+abbreviated (`N`, `SW`, ...) if one appears in the street line at all -
+prefix or suffix. Most streets don't have a directional, so this only fires
+when one is actually present:
+
+```
+addrparts --strict "123 North Main St, Springfield, IL 62704"
+```
+
+```
+error:  'North' should be abbreviated as 'N' in --strict mode
+valid:  false
+```
+
 ### Canonical single-line output
 
 `--format` rejoins the parsed fields into a single line instead of printing
