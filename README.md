@@ -122,15 +122,16 @@ valid:  false
 ### Canonical single-line output
 
 `--format` rejoins the parsed fields into a single line instead of printing
-the usual report - useful for normalizing whitespace and casing (the state
-code comes back upper-cased) without hand-editing the original string:
+the usual report - useful for normalizing whitespace and casing (only the
+state code comes back upper-cased; street and city are passed through as
+typed) without hand-editing the original string:
 
 ```
 addrparts --format "123 main st, springfield, il 62704"
 ```
 
 ```
-123 main st, Springfield, IL 62704
+123 main st, springfield, IL 62704
 ```
 
 It reassembles whatever fields were split out even if the address failed
